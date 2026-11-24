@@ -231,28 +231,110 @@ def fig_boxplot():
     return _png(fig)
 
 
+
 def fig_control():
+    """Genera los dos gráficos de control por variables en el reporte."""
     plt = _plt()
     ss = st.session_state
     lim = ss["limites"]
-    principal, _, _ = m2.construir_series(ss["df"], ss["col_valor"], lim["tipo"])
-    y = principal.values.astype(float)
-    x = np.arange(1, len(y) + 1)
-    fig, ax = plt.subplots(figsize=(8, 3.8))
-    ax.plot(x, y, "-o", color=AZ, ms=4, lw=1, label="Valor del subgrupo")
-    ax.axhline(lim["ucl"], color=RJ, ls="--", label="LCS")
-    ax.axhline(lim["media"], color=VD, label="Línea central")
-    ax.axhline(lim["lcl"], color=RJ, ls="--", label="LCI")
-    fuera = (y > lim["ucl"]) | (y < lim["lcl"])
-    ax.plot(x[fuera], y[fuera], "o", color=RJ, ms=8, label="Fuera de límites")
-    if lim["n_f1"] < len(y):
-        ax.axvline(lim["n_f1"] + 0.5, color="gray", ls=":", label="Inicio de Fase II")
-    ax.set_title(f"Gráfico de control {lim['tipo']}", fontweight="bold")
-    ax.set_xlabel("Subgrupo / observación")
-    ax.set_ylabel(ss["col_valor"])
-    ax.grid(alpha=0.3)
-    _leyenda(ax, 5)
+
+    tipo = lim["tipo"]
+    principal, dispersion, n = m2.construir_series(
+        ss["df"], ss["col_valor"], tipo
+    )
+
+    # Recuperar las muestras de Fase I y las exclusiones.
+    n_f1 = lim["n_f1"]
+    excluidos = lim["excluidos"]
+
+    p1 = principal.iloc[:n_f1]
+    d1 = dispersion.iloc[:n_f1]
+
+    mask = ~p1.index.isin(excluidos)
+
+    # Recalcular ambos juegos de límites con la misma Fase I depurada.
+    limites = m2.calcular_limites(
+        tipo, p1[mask], d1[mask], n
+    )
+
+    fig, axes = plt.subplots(
+        2, 1, figsize=(9, 6.5), sharex=True
+    )
+
+    graficos = [
+        (principal, limites["principal"], "Gráfico principal"),
+        (dispersion, limites["disp"], "Gráfico de dispersión"),
+    ]
+
+    x = np.arange(1, len(principal) + 1)
+
+    for ax, (serie, limites_g, titulo) in zip(axes, graficos):
+        lci, lc, lcs = limites_g
+        y = serie.to_numpy(dtype=float)
+
+        fuera = (y < lci) | (y > lcs)
+        fuera = np.asarray(fuera, dtype=bool)
+
+        # Puntos excluidos de Fase I.
+        excluido = np.array([
+            i < n_f1 and etq in excluidos
+            for i, etq in enumerate(serie.index)
+        ])
+
+        normales = ~(fuera | excluido)
+
+        ax.plot(
+            x, y, "-",
+            color=AZ, lw=1, alpha=0.8
+        )
+
+        ax.plot(
+            x[normales], y[normales],
+            "o", color=AZ, ms=4, label="Dentro de límites"
+        )
+
+        if fuera.any():
+            ax.plot(
+                x[fuera], y[fuera],
+                "o", color=RJ, ms=7, label="Fuera de límites"
+            )
+
+        if excluido.any():
+            ax.plot(
+                x[excluido], y[excluido],
+                "x", color="gray", ms=7, label="Excluido de Fase I"
+            )
+
+        ax.axhline(lcs, color=RJ, ls="--", label="LCS")
+        ax.axhline(lc, color=VD, label="Línea central")
+        ax.axhline(lci, color=RJ, ls="--", label="LCI")
+
+        if n_f1 < len(x):
+            ax.axvline(
+                n_f1 + 0.5,
+                color="gray", ls=":",
+                label="Inicio de Fase II"
+            )
+
+        ax.set_title(titulo, fontweight="bold")
+        ax.grid(alpha=0.3)
+        _leyenda(ax, 4)
+
+    axes[0].set_ylabel(ss["col_valor"])
+    axes[1].set_ylabel(
+        "Rango" if tipo in ("X̄-R", "I-MR") else "Desviación estándar"
+    )
+    axes[1].set_xlabel("Subgrupo / observación")
+
+    fig.suptitle(
+        f"Gráficos de control {tipo}",
+        fontweight="bold",
+        y=1.01
+    )
+
+    fig.tight_layout()
     return _png(fig)
+
 
 
 def fig_capacidad():
