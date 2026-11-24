@@ -13,7 +13,7 @@ DESC = {
     "c": "Número de no conformidades (defectos)",
     "u": "No conformidades por unidad",
 }
-NOMBRE_PAR = {"p": "p̄", "np": "p̄", "c": "c̄", "u": "ū"}
+NOMBRE_PAR = {"p": "p̄", "np": "np̄", "c": "c̄", "u": "ū"}
 
 
 # ---------------------------------------------------------------- cálculos
@@ -117,13 +117,26 @@ def graficar_fase(tipo, etq, y, lci, lc, lcs, excl, r1, r2, ini, fin, fase, rang
         else:
             colores.append(AZUL); simbolos.append("circle")
     fig = go.Figure()
-    fig.add_trace(go.Scatter(x=pos, y=lci[ini:fin], mode="lines", name="LCI (límite inferior)",
-                             hoverinfo="skip", line=dict(color=ROJO, dash="dash", width=1.8, shape="hv")))
-    fig.add_trace(go.Scatter(x=pos, y=lcs[ini:fin], mode="lines", name="LCS (límite superior)",
-                             hoverinfo="skip", line=dict(color=ROJO, dash="dash", width=1.8, shape="hv"),
-                             fill="tonexty", fillcolor="rgba(47,111,222,.06)"))
-    fig.add_trace(go.Scatter(x=pos, y=lc[ini:fin], mode="lines", name="LC (línea central)",
-                             hoverinfo="skip", line=dict(color=VERDE, width=1.8, shape="hv")))
+    # Límites como trazas independientes para que siempre se vean en el gráfico.
+    fig.add_trace(go.Scatter(
+        x=pos, y=lci[ini:fin], mode="lines", name="LCI",
+        hovertemplate="Muestra %{x}<br>LCI: %{y:.5f}<extra></extra>",
+        connectgaps=True,
+        line=dict(color=ROJO, dash="dash", width=2.4, shape="hv"),
+    ))
+    fig.add_trace(go.Scatter(
+        x=pos, y=lcs[ini:fin], mode="lines", name="LCS",
+        hovertemplate="Muestra %{x}<br>LCS: %{y:.5f}<extra></extra>",
+        connectgaps=True,
+        line=dict(color=ROJO, dash="dash", width=2.4, shape="hv"),
+        fill="tonexty", fillcolor="rgba(47,111,222,.06)",
+    ))
+    fig.add_trace(go.Scatter(
+        x=pos, y=lc[ini:fin], mode="lines", name="LC",
+        hovertemplate="Muestra %{x}<br>LC: %{y:.5f}<extra></extra>",
+        connectgaps=True,
+        line=dict(color=VERDE, width=2.4, shape="hv"),
+    ))
     fig.add_trace(go.Scatter(
         x=pos, y=y[ini:fin], mode="lines+markers", showlegend=False,
         line=dict(color=AZUL, width=1.8),
@@ -195,6 +208,31 @@ def mostrar_control():
     par = estimar(tipo, x[:n_f1][mask1], n[:n_f1][mask1])
     y = valores(tipo, x, n)
     lci, lc, lcs = limites(tipo, par, n)
+
+    # Mostrar los límites calculados fuera del gráfico, muestra por muestra.
+    st.subheader("Límites de control calculados")
+    c_lci, c_lc, c_lcs = st.columns(3)
+    c_lci.metric("LCI mínimo", f"{float(np.min(lci)):.5f}")
+    c_lc.metric("LC (línea central)", f"{float(np.mean(lc)):.5f}")
+    c_lcs.metric("LCS máximo", f"{float(np.max(lcs)):.5f}")
+
+    tabla_limites = pd.DataFrame({
+        "Muestra": etq,
+        "Fase": ["I" if i < n_f1 else "II" for i in range(N)],
+        "LCI": lci,
+        "LC": lc,
+        "LCS": lcs,
+    })
+    st.dataframe(
+        tabla_limites.style.format({"LCI": "{:.5f}", "LC": "{:.5f}", "LCS": "{:.5f}"}),
+        hide_index=True,
+        use_container_width=True,
+    )
+    st.caption(
+        "Cuando el tamaño de muestra cambia, los límites LCI y LCS se calculan "
+        "para cada muestra; por eso pueden variar entre filas."
+    )
+
     st.metric(f"Parámetro central {NOMBRE_PAR[tipo]} (Fase I depurada)", f"{par:.5f}")
     if tipo in ("p", "np", "u") and (n * par).min() < 5:
         st.warning("Algunas muestras tienen n·p̄ (o n·ū) menor que 5: la aproximación normal "
