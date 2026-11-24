@@ -93,11 +93,15 @@ def fase1(tipo, x, n, etq, max_iter=10):
 
 
 def senales_tramo(y, lci, lc, lcs, ini, fin):
-    """Índices globales con señal R1 (fuera de límites) y R2 (racha de 8) dentro de [ini, fin)."""
+    """Detecta únicamente puntos que están fuera de los límites de control."""
     ys = y[ini:fin]
-    r1 = {ini + int(i) for i in np.flatnonzero((ys < lci[ini:fin]) | (ys > lcs[ini:fin]))}
-    r2 = {ini + int(i) for i in racha8(ys, lc[ini:fin])} - r1
-    return r1, r2
+    r1 = {
+        ini + int(i)
+        for i in np.flatnonzero(
+            (ys < lci[ini:fin]) | (ys > lcs[ini:fin])
+        )
+    }
+    return r1, set()
 
 
 # ---------------------------------------------------------------- gráfico
