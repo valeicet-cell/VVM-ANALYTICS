@@ -28,14 +28,74 @@ UNIDADES = ["horas", "minutos", "días"]
 
 
 # ---------------------------------------------------------------- cálculos
+def _columnas_medicion_formato_ancho(df, col_valor):
+    """Detecta las columnas de mediciones cuando cada muestra ocupa una fila.
+
+    Ejemplo: Muestra | Medición 1 | ... | Medición 5 | Media | Rango.
+    Las columnas resumen (Media, Rango, etc.) nunca se incluyen como mediciones.
+    """
+    if col_valor not in df.columns or "_subgrupo" not in df.columns:
+        return []
+    columnas = list(df.columns)
+    i_valor = columnas.index(col_valor)
+    # La primera columna de resumen marca el final del bloque de mediciones.
+    finales = {"media", "promedio", "rango", "desviacion", "desviación", "lote",
+               "n", "defectuosos", "defectos"}
+    fin = len(columnas)
+    for i in range(i_valor + 1, len(columnas)):
+        if str(columnas[i]).strip().lower() in finales:
+            fin = i
+            break
+    # Identifica la columna original usada como etiqueta de subgrupo (p. ej. Muestra).
+    col_grupo = None
+    for nombre in columnas:
+        if nombre == "_subgrupo":
+            continue
+        if df[nombre].astype(str).reset_index(drop=True).equals(
+                df["_subgrupo"].astype(str).reset_index(drop=True)):
+            col_grupo = nombre
+            break
+    inicio = columnas.index(col_grupo) + 1 if col_grupo is not None else i_valor
+    candidatas = []
+    for nombre in columnas[inicio:fin]:
+        if nombre == "_subgrupo":
+            continue
+        serie = pd.to_numeric(df[nombre], errors="coerce")
+        if serie.notna().any():
+            candidatas.append(nombre)
+    # Solo se activa con varias mediciones por fila y si la variable elegida
+    # pertenece a ese bloque; evita alterar archivos en formato largo.
+    return candidatas if len(candidatas) >= 2 and col_valor in candidatas else []
+
+
 def construir_series(df, col_valor, tipo):
-    """Devuelve (serie principal, serie de dispersión, tamaño de subgrupo n)."""
+    """Devuelve (serie principal, serie de dispersión, tamaño de subgrupo n).
+
+    Admite formato largo (una medición por fila) y ancho (varias mediciones
+    por muestra/fila). En formato ancho, cada fila es un subgrupo.
+    """
     if tipo == "I-MR":
-        x = df[col_valor].reset_index(drop=True)
+        x = pd.to_numeric(df[col_valor], errors="coerce").dropna().reset_index(drop=True)
         x.index = x.index + 1
         return x, x.diff().abs(), 1
 
-    g = df.groupby("_subgrupo")[col_valor]
+    columnas_ancho = _columnas_medicion_formato_ancho(df, col_valor)
+    if columnas_ancho:
+        matriz = df[columnas_ancho].apply(pd.to_numeric, errors="coerce")
+        conteo = matriz.count(axis=1)
+        n = int(conteo.mode().iloc[0])
+        validos = conteo == n
+        matriz = matriz.loc[validos]
+        etiquetas = df.loc[validos, "_subgrupo"].astype(str).tolist()
+        medias = matriz.mean(axis=1).to_numpy()
+        if tipo == "X̄-R":
+            dispersion = (matriz.max(axis=1) - matriz.min(axis=1)).to_numpy()
+        else:
+            dispersion = matriz.std(axis=1, ddof=1).to_numpy()
+        idx = pd.Index(etiquetas, name="Subgrupo")
+        return pd.Series(medias, index=idx), pd.Series(dispersion, index=idx), n
+
+    g = df.groupby("_subgrupo", sort=False)[col_valor]
     conteo = g.count()
     n = int(conteo.mode().iloc[0])
     validos = conteo[conteo == n].index  # solo subgrupos completos
@@ -131,9 +191,14 @@ def rangos_y(principal, disp, lim):
 def graficar_fase(principal, disp, lim, sen, excluidos, tipo, fase, offset, rangos):
     """Gráfico de una sola fase: gráfico principal arriba y de dispersión abajo."""
     nom_p, nom_d = NOMBRES[tipo]
-    titulos = (f"Fase {fase} · Gráfico {nom_p}", f"Fase {fase} · Gráfico {nom_d}")
-    fig = make_subplots(rows=2, cols=1, shared_xaxes=True, vertical_spacing=0.13,
-                        subplot_titles=titulos)
+    fig = make_subplots(
+        rows=2, cols=1, shared_xaxes=True,
+        vertical_spacing=0.18,
+        subplot_titles=(
+            f"Fase {fase} · Gráfico {nom_p}",
+            f"Fase {fase} · Gráfico {nom_d}",
+        ),
+    )
     pos = np.arange(offset + 1, offset + len(principal) + 1)
     series = [(principal, lim["principal"], sen["principal"]),
               (disp, lim["disp"], sen["disp"])]
@@ -172,13 +237,20 @@ def graficar_fase(principal, disp, lim, sen, excluidos, tipo, fase, offset, rang
 
     fig.update_xaxes(range=[offset + 0.5, offset + len(principal) + 0.5])
     fig.update_xaxes(title_text="Subgrupo / observación", row=2, col=1)
-    fig = estilo(fig, None, 620, derecha=95)
 
-    # Títulos de cada subgráfico: se suben para que no toquen el marco del gráfico
-    fig.update_layout(margin=dict(t=80))
-    for a in fig.layout.annotations:
-        if a.text in titulos:
-            a.update(yshift=18, font=dict(size=15, color="#0F2740"))
+    # Los títulos de cada subplot se elevan y se separan del área de datos.
+    # El espacio vertical adicional evita que se superpongan con las curvas.
+    fig.update_annotations(
+        yshift=12,
+        yanchor="bottom",
+        font=dict(size=13, color="#3B1724"),
+    )
+
+    fig = estilo(fig, None, 620, derecha=95)
+    fig.update_layout(
+        height=700,
+        margin=dict(l=45, r=95, t=65, b=88),
+    )
     return fig
 
 
@@ -208,9 +280,22 @@ def mostrar():
         if len(principal) < 8:
             st.error("Se necesitan al menos 8 puntos para construir el gráfico.")
             return
-        n_ii = int(c[1].number_input("Puntos Fase II", min_value=0, max_value=len(principal) - 5,
-                                     value=0, step=1, help="Los últimos puntos se reservan para Fase II."))
-        modo = c[2].radio("Depuración Fase I", ["Automática", "Manual"], horizontal=True, key="m2_modo")
+        # La Fase I se toma del inicio de la serie. Por defecto se usan las
+        # primeras 24 muestras (criterio habitual de referencia); las restantes
+        # pasan a Fase II. El usuario puede ajustar este corte según su estudio.
+        n_f1 = int(c[1].number_input(
+            "Muestras Fase I", min_value=8, max_value=len(principal),
+            value=min(24, len(principal)), step=1, key="m2_n_f1_v3",
+            help="Se usan las primeras N muestras para calcular los límites. "
+                 "Las muestras posteriores se evalúan en Fase II con esos límites congelados."
+        ))
+        n_ii = len(principal) - n_f1
+        modo = c[2].radio(
+            "Depuración Fase I", ["Manual", "Automática"], horizontal=True,
+            key="m2_modo_v3",
+            help="Manual conserva todas las muestras de Fase I. Automática excluye iterativamente "
+                 "puntos fuera de límites; úsela solo si existe una causa especial identificada."
+        )
         h = c[3].number_input("Intervalo h", min_value=0.01, max_value=1000.0, step=0.25, key="m2_h",
                               help="Tiempo entre muestras (para el ATS).")
         unidad = c[4].selectbox("Unidad", UNIDADES, key="m2_u")
@@ -220,7 +305,8 @@ def mostrar():
     st.caption(f"Variable: **{col}** | Tamaño de subgrupo n = {n} | Puntos: {len(principal)}")
     if len(principal) < 20:
         st.warning("Se recomiendan al menos 20-25 subgrupos en Fase I para límites confiables.")
-    n_f1 = len(principal) - n_ii
+    # Corte explícito: primeras n_f1 muestras para Fase I; resto para Fase II.
+    # Los límites se estiman únicamente con Fase I y luego quedan congelados.
     p1, d1 = principal.iloc[:n_f1], disp.iloc[:n_f1]
 
     # ---- Depuración de Fase I ----
@@ -240,11 +326,12 @@ def mostrar():
     # ---- Límites de Fase I depurada (se congelan para Fase II) ----
     mask = ~p1.index.isin(excluidos)
     lim = calcular_limites(tipo, p1[mask], d1[mask], n)
-    c = st.columns(4)
+    c = st.columns(5)
     c[0].metric("LCI", f"{lim['principal'][0]:.4f}")
-    c[1].metric("Línea central", f"{lim['principal'][1]:.4f}")
+    c[1].metric("LC (medias)", f"{lim['principal'][1]:.4f}")
     c[2].metric("LCS", f"{lim['principal'][2]:.4f}")
-    c[3].metric("σ estimada (dentro)", f"{lim['sigma']:.4f}")
+    c[3].metric("LC dispersión (R̄ / S̄ / MR̄)", f"{lim['disp'][1]:.4f}")
+    c[4].metric("σ estimada (dentro)", f"{lim['sigma']:.4f}")
 
     # ---- ARL y ATS del gráfico ----
     alfa = 2 * stats.norm.sf(3.0)
@@ -269,14 +356,16 @@ def mostrar():
     sen2 = senales_fase(p2, d2s, lim) if n_ii > 0 else None
 
     st.subheader("Fase I · Establecimiento de los límites")
-    st.caption(f"{n_f1} puntos | {len(excluidos)} excluido(s) | límites calculados con los puntos restantes")
+    st.caption(f"Primeras {n_f1} muestras | {len(excluidos)} excluida(s) | "
+               "límites calculados únicamente con las muestras de Fase I no excluidas")
     st.plotly_chart(graficar_fase(p1, d1, lim, sen1, excluidos, tipo, "I", 0, rangos),
                     width="stretch", key="fig_fase1")
 
     st.subheader("Fase II · Monitoreo con límites congelados")
     if n_ii == 0:
-        st.info("Para ver la Fase II, indique arriba cuántos puntos reservar (por ejemplo, los últimos 8). "
-                "Esos puntos se evalúan con los límites de la Fase I, sin recalcularlos.")
+        st.info("Todas las muestras están asignadas a Fase I. Reduzca el número de «Muestras Fase I» "
+                "para reservar las muestras posteriores como Fase II; estas se evaluarán con los límites "
+                "de Fase I, sin recalcularlos.")
     else:
         st.caption(f"{n_ii} puntos nuevos evaluados con los límites de Fase I (misma escala vertical).")
         st.plotly_chart(graficar_fase(p2, d2s, lim, sen2, [], tipo, "II", n_f1, rangos),
@@ -315,30 +404,12 @@ def mostrar():
             st.success("Fase II: sin señales. El proceso se mantiene estable respecto a la Fase I.")
 
     st.subheader("Conclusión del análisis de control")
-    lcl_p, cl_p, ucl_p = lim["principal"]
-    cap = st.session_state.get("capacidad")
-    cp_v = cap.get("Cp") if cap else None
-    cpk_v = cap.get("Cpk") if cap else None
-    if cpk_v is not None:
-        cp_txt = "—" if cp_v is None else f"{cp_v:.3f}"
-        cap_txt = f"Capacidad del proceso (módulo Capacidad): Cp = {cp_txt} y Cpk = {cpk_v:.3f}."
-    else:
-        cap_txt = ("Cp y Cpk aún no están disponibles: se calculan en el módulo Capacidad "
-                   "una vez ingresadas las especificaciones (LEI y LES).")
-    resumen = (f"Fase I con {n_f1} puntos ({len(excluidos)} excluido(s)): LCI = {lcl_p:.4f}, "
-               f"LC = {cl_p:.4f}, LCS = {ucl_p:.4f} y σ estimada = {lim['sigma']:.4f}. "
-               f"Desempeño del gráfico (límites a 3σ, n = {n}): α = {alfa:.5f}, "
-               f"ARL0 = {arl0:.1f} muestras (ATS0 = {arl0 * h:.1f} {unidad}); ante un desplazamiento de "
-               f"{delta:g}σ, ARL1 = {arl1:.2f} muestras (ATS1 = {arl1 * h:.2f} {unidad}). {cap_txt}")
     if filas:
         st.warning(f"El análisis identificó {len(filas)} señal(es) de comportamiento no aleatorio, "
                    f"incluidas {len(alarmas_ii)} en Fase II. El proceso requiere investigación de causas "
-                   "especiales antes de considerarse estable; las señales deben contrastarse con registros "
-                   f"operativos. {resumen}")
+                   "especiales antes de considerarse estable; las señales deben contrastarse con registros operativos.")
     else:
-        st.success("No se identificaron señales con las reglas aplicadas. Los datos son compatibles con un "
-                   "proceso bajo control estadístico en el periodo evaluado; se recomienda mantener el "
-                   f"monitoreo para confirmar la continuidad de este comportamiento. {resumen}")
+        st.success("No se identificaron señales con las reglas aplicadas. Los datos son compatibles con un proceso bajo control estadístico en el periodo evaluado; se recomienda mantener el monitoreo para confirmar la continuidad de este comportamiento.")
 
     # Guardar para los demás módulos
     st.session_state["arl_cfg"] = {"h": h, "unidad": unidad, "delta": delta, "L": 3.0, "n": n}
@@ -347,6 +418,4 @@ def mostrar():
         "media": lim["principal"][1], "excluidos": excluidos,
         "lcl": lim["principal"][0], "ucl": lim["principal"][2],
         "n_f1": n_f1, "n_senales": len(filas), "alarmas_ii": len(alarmas_ii),
-        "alfa": alfa, "arl0": arl0, "ats0": arl0 * h, "arl1": arl1, "ats1": arl1 * h,
-        "delta": delta, "h": h, "unidad": unidad,
     }
