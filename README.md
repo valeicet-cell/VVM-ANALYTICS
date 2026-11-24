@@ -4,14 +4,14 @@ Aplicación de Control Estadístico de Procesos construida con Python y Streamli
 La aplicación incluye una pantalla de bienvenida para usuarios nuevos, carga de un archivo completo de proceso y conserva las opciones independientes de carga de variables y atributos. Los módulos de **Gráficos por Variables** y **Gráficos por Atributos** siguen separados.
 
 ## Requisitos
-- Python 3.10 o superior (recomendado 3.11/3.12).
+- Python 3.12 (recomendado).
 - Windows, macOS o Linux.
 
 ## Instalación en Windows
 1. Descomprima la carpeta en una ubicación de trabajo.
 2. Abra una terminal dentro de la carpeta `VVM Analytics`.
 3. Cree un entorno virtual: `py -m venv venv`
-4. Actívelo: `.venv\\Scripts\\activate`
+4. Actívelo: `venv\Scripts\Activate.ps1`
 5. Instale dependencias: `python -m pip install -r requirements.txt`
 6. Ejecute: `streamlit run app.py`
 
@@ -39,3 +39,12 @@ streamlit run app.py
 - Si desea trabajar solo con mediciones o solo con conteos, use las pestañas independientes **Solo variables** y **Solo atributos**.
 - La sesión de Streamlit guarda datos temporalmente en memoria. Guarde los archivos exportados desde los módulos correspondientes.
 - No incluya contraseñas, tokens ni credenciales en archivos que vaya a compartir.
+
+## Acceso al programa
+
+- **Repositorio de GitHub:** [Pegar aquí el enlace del repositorio]
+- **Aplicación web:** [Pegar aquí el enlace de Streamlit Cloud]
+
+## Ejecución local
+
+Para ejecutar el programa localmente, siga las instrucciones de instalación descritas anteriormente. Es necesario instalar las dependencias incluidas en `requirements.txt` antes de iniciar la aplicación.
