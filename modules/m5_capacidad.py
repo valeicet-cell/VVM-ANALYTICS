@@ -153,20 +153,38 @@ def mostrar():
     st.caption("Cp/Cpk (potencial) usan σ dentro de subgrupos; Pp/Ppk (desempeño real) usan σ global. "
                "Los IC son aproximados.")
 
+ 
     # ---- Fracción no conforme ----
     st.subheader("3. Fracción no conforme")
     bw, aw = fnc(mu, sw, lei, les)
     bg, ag = fnc(mu, so, lei, les)
     ob = float((x < lei).mean()) if lei is not None else 0.0
     oa = float((x > les).mean()) if les is not None else 0.0
+
     tabla_fnc = pd.DataFrame({
-        "Concepto (PPM)": ["Por debajo del LEI", "Por encima del LES", "Total"],
-        "Esperada, σ dentro": [bw * 1e6, aw * 1e6, (bw + aw) * 1e6],
-        "Esperada, σ global": [bg * 1e6, ag * 1e6, (bg + ag) * 1e6],
-        "Observada en los datos": [ob * 1e6, oa * 1e6, (ob + oa) * 1e6]}).round(1)
+        "Concepto (%)": [
+            "Por debajo del LEI",
+            "Por encima del LES",
+            "Total"
+        ],
+        "Esperada, σ dentro (%)": [
+            bw * 100, aw * 100, (bw + aw) * 100
+        ],
+        "Esperada, σ global (%)": [
+            bg * 100, ag * 100, (bg + ag) * 100
+        ],
+        "Observada en los datos (%)": [
+            ob * 100, oa * 100, (ob + oa) * 100
+        ]
+    }).round(4)
+
     st.dataframe(tabla_fnc, hide_index=True)
-    st.write(f"Fracción no conforme esperada con σ global: **{(bg + ag) * 100:.4f} %** "
-             f"({(bg + ag) * 1e6:.1f} PPM).")
+
+    st.write(
+        f"Fracción no conforme esperada con σ global: "
+        f"**{(bg + ag) * 100:.4f} %**."
+    )
+
 
     # ---- Histograma ----
     xs = np.linspace(x.min() - 3 * so, x.max() + 3 * so, 300)
