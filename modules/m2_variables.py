@@ -304,9 +304,8 @@ def mostrar():
         delta = c[5].number_input("δ a detectar (σ)", min_value=0.05, max_value=5.0, step=0.05, key="m2_d",
                                   help="Desplazamiento de la media que se quiere detectar (para el ARL1).")
 
-    st.caption(f"Variable: **{col}** | Tamaño de subgrupo n = {n} | Puntos: {len(principal)}")
-    if len(principal) < 20:
-        st.warning("Se recomiendan al menos 20-25 subgrupos en Fase I para límites confiables.")
+        st.caption("Rojo: fuera de límites | Gris con X: excluido de Fase I.")    
+        if len(principal) < 20: st.warning("Se recomiendan al menos 20-25 subgrupos en Fase I para límites confiables.")
     # Corte explícito: primeras n_f1 muestras para Fase I; resto para Fase II.
     # Los límites se estiman únicamente con Fase I y luego quedan congelados.
     p1, d1 = principal.iloc[:n_f1], disp.iloc[:n_f1]
