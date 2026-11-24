@@ -172,9 +172,11 @@ def evaluar_senales(serie, lim, con_zonas):
 
 
 def senales_fase(p, d, lim):
-    """Señales de ambos gráficos dentro de un tramo (Fase I o Fase II)."""
-    return {"principal": evaluar_senales(p, lim["principal"], con_zonas=True),
-            "disp": evaluar_senales(d, lim["disp"], con_zonas=False)}
+    """Detecta únicamente puntos que superan los límites de control."""
+    return {
+        "principal": evaluar_senales(p, lim["principal"], con_zonas=False),
+        "disp": evaluar_senales(d, lim["disp"], con_zonas=False)
+    }
 
 
 def rangos_y(principal, disp, lim):
